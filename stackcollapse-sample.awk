@@ -66,8 +66,11 @@ BEGIN {
   _IGNORE["libsystem_kernel`__workq_kernreturn"] = 1
   _IGNORE["libsystem_kernel`kevent"] = 1
   _IGNORE["libsystem_kernel`mach_msg_trap"] = 1
+  _IGNORE["libsystem_kernel`mach_msg2_trap"] = 1
   _IGNORE["libsystem_kernel`read"] = 1
   _IGNORE["libsystem_kernel`semaphore_wait_trap"] = 1
+  _IGNORE["libsystem_kernel`poll"] = 1
+  _IGNORE["libsystem_kernel`syscall_thread_switch"] = 1
 
   # The same set of symbols as above, without the module name.
   _IGNORE["__psynch_cvwait"] = 1
@@ -78,9 +81,11 @@ BEGIN {
   _IGNORE["__workq_kernreturn"] = 1
   _IGNORE["kevent"] = 1
   _IGNORE["mach_msg_trap"] = 1
+  _IGNORE["mach_msg2_trap"] = 1
   _IGNORE["read"] = 1
   _IGNORE["semaphore_wait_trap"] = 1
-
+  _IGNORE["poll"] = 1
+  _IGNORE["syscall_thread_switch"] = 1
 }
 
 # This is the first line in the /usr/bin/sample output that indicates the
@@ -120,8 +125,8 @@ function printStack(FROM,TO) {
 
   for(l = FROM; l>=TO; l--) {
     if (_PRINT_IT) {
-      printf("%s", _NAMES[0])
-      for(i=1; i<=l; i++) {
+      printf("%s", _NAMES[1])
+      for(i=2; i<=l; i++) {
         printf(";%s", _NAMES[i])
       }
       print " " _TIMES[l]
@@ -167,17 +172,19 @@ _FOUND_STACK && match($0,/^    [^0-9]*[0-9]/) {
   #  -[NSExample function:withParameter]
   #  +[NSExample staticFunction:withParameter:andAnother]
 
-  _FN1 = $2
-  _FN2 = $3
-
-  # If it is a standard C or C++ function then the following word will
-  # either be blank, or the text '(in', so we jut use the first one:
-
-  if (_FN2 == "(in" || _FN2 == "") {
-    _FN =_FN1
+  # Extract the full function name as everything between TIME and ' (in '.
+  # This correctly handles multi-word Swift names such as:
+  #   partial apply for closure #1 in static Foo.bar()
+  #   closure #1 in closure #2 in Foo.method()
+  #   thunk for @escaping @callee_guaranteed (@guaranteed T) -> ()
+  #   protocol witness for P.f() in conformance C
+  # as well as plain C/C++ names and Objective-C bracket names.
+  _rest = substr($0, length($1) + 2)
+  if (match(_rest, / \(in /)) {
+    _FN = substr(_rest, 1, RSTART - 1)
+    sub(/ +$/, "", _FN)
   } else {
-    # Otherwise we concatenate the first two parts with .
-    _FN = _FN1 "." _FN2
+    _FN = $2
   }
 
   # Modules are shown with '(in libfoo.dylib)' or '(in AppKit)'
